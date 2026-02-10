@@ -1,0 +1,7 @@
+# Ghostty configuration
+# Docs: https://ghostty.org/docs/config
+
+auto-update-channel = tip
+
+# Play system alert sound + bounce dock icon + show bell emoji in title on BEL
+bell-features = system,attention,title

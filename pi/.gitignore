@@ -1,0 +1,5 @@
+# Machine-specific, not tracked
+auth.json
+sessions/
+bin/
+skills/
