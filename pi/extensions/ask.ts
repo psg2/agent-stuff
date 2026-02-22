@@ -356,6 +356,31 @@ Example usage:
 					// Helper to add truncated line
 					const add = (s: string) => lines.push(truncateToWidth(s, width));
 
+					// Helper to word-wrap plain text to fit width
+					function addWrapped(text: string) {
+						const paragraphs = text.split("\n");
+						for (const para of paragraphs) {
+							if (para.trim() === "") {
+								lines.push("");
+								continue;
+							}
+							const words = para.split(/\s+/);
+							let currentLine = "";
+							for (const word of words) {
+								const candidate = currentLine
+									? `${currentLine} ${word}`
+									: word;
+								if (candidate.length > width && currentLine) {
+									lines.push(currentLine);
+									currentLine = word;
+								} else {
+									currentLine = candidate;
+								}
+							}
+							if (currentLine) lines.push(currentLine);
+						}
+					}
+
 					// Breadcrumb navigation (multi-question only)
 					if (isMulti) {
 						const crumbs: string[] = [];
@@ -403,7 +428,22 @@ Example usage:
 								add(prefix + theme.fg(color, `${i + 1}. ${opt.label}`));
 							}
 							if (opt.description) {
-								add(`     ${theme.fg("muted", opt.description)}`);
+								// Word-wrap descriptions with indent
+								const descLines = opt.description.split("\n");
+								for (const dl of descLines) {
+									const words = dl.split(/\s+/);
+									let cur = "     ";
+									for (const w of words) {
+										const test = cur === "     " ? `${cur}${w}` : `${cur} ${w}`;
+										if (test.length > width && cur !== "     ") {
+											add(theme.fg("muted", cur));
+											cur = `     ${w}`;
+										} else {
+											cur = test;
+										}
+									}
+									if (cur.trim()) add(theme.fg("muted", cur));
+								}
 							}
 						}
 
@@ -430,7 +470,7 @@ Example usage:
 
 					// Content
 					if (inputMode && q) {
-						add(theme.fg("text", theme.bold(q.prompt)));
+						addWrapped(theme.fg("text", theme.bold(q.prompt)));
 						lines.push("");
 						// Show options for reference
 						renderOptions();
@@ -449,8 +489,8 @@ Example usage:
 							const answer = answers.get(question.id);
 							if (answer) {
 								const bullet = theme.fg("success", "● ");
-								const qText = theme.fg("text", `${question.prompt}`);
-								add(bullet + qText);
+								const qLabel = theme.fg("text", question.label);
+								add(bullet + qLabel);
 								let answerDisplay = answer.label;
 								if (answer.wasChat) {
 									answerDisplay = `(chat) ${answer.label}`;
@@ -477,7 +517,7 @@ Example usage:
 								theme.fg(cancelSelected ? "warning" : "text", "2. Cancel"),
 						);
 					} else if (q) {
-						add(theme.fg("text", theme.bold(q.prompt)));
+						addWrapped(theme.fg("text", theme.bold(q.prompt)));
 						lines.push("");
 						renderOptions();
 					}
