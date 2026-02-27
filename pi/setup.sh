@@ -177,9 +177,9 @@ for i in "${!extensions[@]}"; do
   fi
 done
 
-# Always link settings
-ln -sf "$SCRIPT_DIR/settings.json" "$PI_DIR/settings.json"
-printf "  ${GREEN}✓${RESET} Linked ${BOLD}settings.json${RESET}\n"
+# Copy settings (not a symlink — pi writes to this file at runtime, symlinks break locking)
+cp "$SCRIPT_DIR/settings.json" "$PI_DIR/settings.json"
+printf "  ${GREEN}✓${RESET} Copied ${BOLD}settings.json${RESET}\n"
 
 echo ""
 if [ "$linked" -eq 0 ]; then
