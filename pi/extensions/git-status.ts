@@ -123,14 +123,7 @@ export default function (pi: ExtensionAPI): void {
 						? ctx.modelRegistry.isUsingOAuth(ctx.model)
 						: false;
 					if (totalCost || usingSubscription) {
-						const activeProfile = ctx.model
-							? ctx.modelRegistry.authStorage.getActiveProfile(ctx.model.provider)
-							: undefined;
-						const profileSuffix =
-							activeProfile && activeProfile !== "default"
-								? ` • ${activeProfile}`
-								: "";
-						const subLabel = usingSubscription ? ` (sub${profileSuffix})` : "";
+						const subLabel = usingSubscription ? " (sub)" : "";
 						const costStr = `$${totalCost.toFixed(3)}${subLabel}`;
 						statsParts.push(costStr);
 					}

@@ -12,15 +12,28 @@ GREEN='\033[32m'
 YELLOW='\033[33m'
 RESET='\033[0m'
 
-# Gather available extensions
+# Gather available extensions (single .ts files and directories with index.ts)
 extensions=()
 descriptions=()
+ext_types=()  # "file" or "dir"
+
 for ext in "$SCRIPT_DIR"/extensions/*.ts; do
   [ -f "$ext" ] || continue
   name="$(basename "$ext" .ts)"
   extensions+=("$name")
+  ext_types+=("file")
   # Extract first line of JSDoc description (second line of file, after "/**")
   desc=$(sed -n '2s/^ *\* *//p' "$ext" 2>/dev/null || echo "")
+  descriptions+=("$desc")
+done
+
+for ext_dir in "$SCRIPT_DIR"/extensions/*/; do
+  [ -f "$ext_dir/index.ts" ] || continue
+  name="$(basename "$ext_dir")"
+  extensions+=("$name")
+  ext_types+=("dir")
+  # Extract first line of JSDoc description from index.ts
+  desc=$(sed -n '2s/^ *\* *//p' "$ext_dir/index.ts" 2>/dev/null || echo "")
   descriptions+=("$desc")
 done
 
@@ -171,7 +184,16 @@ linked=0
 for i in "${!extensions[@]}"; do
   name="${extensions[$i]}"
   if [ "${selected[$i]}" -eq 1 ]; then
-    ln -sf "$SCRIPT_DIR/extensions/$name.ts" "$PI_DIR/extensions/$name.ts"
+    if [ "${ext_types[$i]}" = "dir" ]; then
+      # Directory extension: install deps if needed, then symlink the directory
+      if [ -f "$SCRIPT_DIR/extensions/$name/package.json" ] && [ ! -d "$SCRIPT_DIR/extensions/$name/node_modules" ]; then
+        printf "  ${DIM}Installing dependencies for %s...${RESET}\n" "$name"
+        (cd "$SCRIPT_DIR/extensions/$name" && npm install --silent 2>/dev/null)
+      fi
+      ln -sfn "$SCRIPT_DIR/extensions/$name" "$PI_DIR/extensions/$name"
+    else
+      ln -sf "$SCRIPT_DIR/extensions/$name.ts" "$PI_DIR/extensions/$name.ts"
+    fi
     printf "  ${GREEN}✓${RESET} Linked ${BOLD}%s${RESET}\n" "$name"
     ((linked++)) || true
   fi
