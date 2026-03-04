@@ -347,10 +347,16 @@ function streamAnthropic(model: Model<Api>, context: Context, options?: SimpleSt
 				params.system = [{ type: "text", text: sanitize(context.systemPrompt), cache_control: { type: "ephemeral" } }];
 			}
 			if (context.tools) params.tools = convertTools(context.tools, isOAuth);
-			if (options?.reasoning && model.reasoning) {
-				const budgets: Record<string, number> = { minimal: 1024, low: 4096, medium: 10240, high: 20480 };
+			const budgets: Record<string, number> = { minimal: 1024, low: 4096, medium: 10240, high: 20480 };
+			if (options?.reasoning && options.reasoning !== "off" && model.reasoning) {
 				const custom = options.thinkingBudgets?.[options.reasoning as keyof typeof options.thinkingBudgets];
-				params.thinking = { type: "enabled", budget_tokens: custom ?? budgets[options.reasoning] ?? 10240 };
+				const budgetTokens = custom ?? budgets[options.reasoning] ?? 10240;
+				// Anthropic requires max_tokens > thinking.budget_tokens
+				if (params.max_tokens > budgetTokens) {
+					params.thinking = { type: "enabled", budget_tokens: budgetTokens };
+				} else {
+					params.thinking = { type: "enabled", budget_tokens: Math.max(1024, params.max_tokens - 1) };
+				}
 			}
 			const anthropicStream = client.messages.stream({ ...params }, { signal: options?.signal });
 			stream.push({ type: "start", partial: output });
