@@ -203,6 +203,19 @@ done
 cp "$SCRIPT_DIR/settings.json" "$PI_DIR/settings.json"
 printf "  ${GREEN}✓${RESET} Copied ${BOLD}settings.json${RESET}\n"
 
+# Symlink @mariozechner/pi-tui and @mariozechner/pi-ai into ~/.pi/agent/node_modules so
+# extensions can import them. Pi bundles these as nested deps of pi-coding-agent but the
+# extension loader doesn't always resolve them correctly (broken as of 0.56.0).
+PI_PKG_DIR="$(dirname "$(dirname "$(which pi)")")/lib/node_modules/@mariozechner/pi-coding-agent/node_modules/@mariozechner"
+if [ -d "$PI_PKG_DIR/pi-tui" ] && [ -d "$PI_PKG_DIR/pi-ai" ]; then
+  mkdir -p "$PI_DIR/node_modules/@mariozechner"
+  ln -sfn "$PI_PKG_DIR/pi-tui" "$PI_DIR/node_modules/@mariozechner/pi-tui"
+  ln -sfn "$PI_PKG_DIR/pi-ai"  "$PI_DIR/node_modules/@mariozechner/pi-ai"
+  printf "  ${GREEN}✓${RESET} Symlinked ${BOLD}@mariozechner/pi-tui${RESET} and ${BOLD}@mariozechner/pi-ai${RESET}\n"
+else
+  printf "  ${YELLOW}⚠${RESET}  Could not find pi-tui/pi-ai under %s — skipping symlinks\n" "$PI_PKG_DIR"
+fi
+
 echo ""
 if [ "$linked" -eq 0 ]; then
   printf "  ${YELLOW}No extensions selected.${RESET} Only settings.json was linked.\n"
