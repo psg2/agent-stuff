@@ -140,6 +140,7 @@ Example usage:
 				// State
 				let currentTab = 0;
 				let optionIndex = 0;
+				let scrollOffset = 0;
 				let inputMode: "other" | "chat" | null = null;
 				let inputQuestionId: string | null = null;
 				let cachedLines: string[] | undefined;
@@ -197,6 +198,18 @@ Example usage:
 					return questions.every((q) => answers.has(q.id));
 				}
 
+				function getTerminalHeight(): number {
+					return process.stdout.rows || 24;
+				}
+
+				// Basic scroll hint — keep scrollOffset <= optionIndex.
+				// The real line-aware clipping happens inside renderOptions().
+				function ensureOptionVisible() {
+					if (optionIndex < scrollOffset) {
+						scrollOffset = optionIndex;
+					}
+				}
+
 				function advanceAfterAnswer() {
 					if (!isMulti) {
 						submit(false);
@@ -208,6 +221,7 @@ Example usage:
 						currentTab = questions.length; // Submit tab
 					}
 					optionIndex = 0;
+					scrollOffset = 0;
 					refresh();
 				}
 
@@ -274,6 +288,7 @@ Example usage:
 						if (matchesKey(data, Key.tab) || matchesKey(data, Key.right)) {
 							currentTab = (currentTab + 1) % totalTabs;
 							optionIndex = 0;
+							scrollOffset = 0;
 							refresh();
 							return;
 						}
@@ -283,6 +298,7 @@ Example usage:
 						) {
 							currentTab = (currentTab - 1 + totalTabs) % totalTabs;
 							optionIndex = 0;
+							scrollOffset = 0;
 							refresh();
 							return;
 						}
@@ -301,11 +317,13 @@ Example usage:
 					// Option navigation
 					if (matchesKey(data, Key.up)) {
 						optionIndex = Math.max(0, optionIndex - 1);
+						ensureOptionVisible();
 						refresh();
 						return;
 					}
 					if (matchesKey(data, Key.down)) {
 						optionIndex = Math.min(opts.length - 1, optionIndex + 1);
+						ensureOptionVisible();
 						refresh();
 						return;
 					}
@@ -410,10 +428,13 @@ Example usage:
 						lines.push("");
 					}
 
-					// Helper to render options list
+					// Helper to render options list with viewport scrolling
 					function renderOptions() {
 						const mainOpts = opts.filter((o) => !o.isChat);
 						const chatOpt = opts.find((o) => o.isChat);
+
+						// Build all option lines first, tracking which lines belong to which option
+						const optionLines: { index: number; lines: string[] }[] = [];
 
 						for (let i = 0; i < mainOpts.length; i++) {
 							const opt = mainOpts[i];
@@ -421,14 +442,14 @@ Example usage:
 							const isOther = opt.isOther === true;
 							const prefix = selected ? theme.fg("accent", ") ") : "  ";
 							const color = selected ? "accent" : "text";
-							// Mark "Type something" differently when in input mode
+							const optLines: string[] = [];
+
 							if (isOther && inputMode === "other") {
-								add(prefix + theme.fg("accent", `${i + 1}. ${opt.label} ✎`));
+								optLines.push(truncateToWidth(prefix + theme.fg("accent", `${i + 1}. ${opt.label} ✎`), width));
 							} else {
-								add(prefix + theme.fg(color, `${i + 1}. ${opt.label}`));
+								optLines.push(truncateToWidth(prefix + theme.fg(color, `${i + 1}. ${opt.label}`), width));
 							}
 							if (opt.description) {
-								// Word-wrap descriptions with indent
 								const descLines = opt.description.split("\n");
 								for (const dl of descLines) {
 									const words = dl.split(/\s+/);
@@ -436,35 +457,112 @@ Example usage:
 									for (const w of words) {
 										const test = cur === "     " ? `${cur}${w}` : `${cur} ${w}`;
 										if (test.length > width && cur !== "     ") {
-											add(theme.fg("muted", cur));
+											optLines.push(truncateToWidth(theme.fg("muted", cur), width));
 											cur = `     ${w}`;
 										} else {
 											cur = test;
 										}
 									}
-									if (cur.trim()) add(theme.fg("muted", cur));
+									if (cur.trim()) optLines.push(truncateToWidth(theme.fg("muted", cur), width));
 								}
 							}
+							optionLines.push({ index: i, lines: optLines });
 						}
 
-						// Chat option separated at bottom
+						// Chat option
 						if (chatOpt) {
-							lines.push("");
 							const chatIndex = mainOpts.length;
 							const selected = optionIndex === chatIndex;
 							const prefix = selected ? theme.fg("accent", ") ") : "  ";
 							const color = selected ? "accent" : "muted";
+							const chatLines: string[] = [""];  // blank separator
 							if (inputMode === "chat") {
-								add(
-									prefix +
-										theme.fg("accent", `${chatIndex + 1}. ${chatOpt.label} ✎`),
-								);
+								chatLines.push(truncateToWidth(
+									prefix + theme.fg("accent", `${chatIndex + 1}. ${chatOpt.label} ✎`),
+									width,
+								));
 							} else {
-								add(
-									prefix +
-										theme.fg(color, `${chatIndex + 1}. ${chatOpt.label}`),
-								);
+								chatLines.push(truncateToWidth(
+									prefix + theme.fg(color, `${chatIndex + 1}. ${chatOpt.label}`),
+									width,
+								));
 							}
+							optionLines.push({ index: chatIndex, lines: chatLines });
+						}
+
+						const totalOpts = optionLines.length;
+						// Reserve lines for: prompt (~3-4), breadcrumbs (~2), blank lines (~2), help/footer (~3), scroll hints (~2)
+						const reservedLines = 12;
+						const maxLines = Math.max(5, getTerminalHeight() - reservedLines);
+
+						// Check if scrolling is needed (count total rendered lines)
+						const totalContentLines = optionLines.reduce((sum, o) => sum + o.lines.length, 0);
+						if (totalContentLines <= maxLines) {
+							// No scrolling needed — render all
+							for (const opt of optionLines) {
+								for (const line of opt.lines) {
+									lines.push(line);
+								}
+							}
+							return;
+						}
+
+						// Clamp scrollOffset so selected option is visible within the line budget.
+						// First, ensure scrollOffset <= optionIndex
+						if (scrollOffset > optionIndex) {
+							scrollOffset = optionIndex;
+						}
+
+						// Then check: can we see the selected option from scrollOffset?
+						// Count lines from scrollOffset up to and including optionIndex.
+						let linesFromOffsetToSelected = 0;
+						for (let i = scrollOffset; i <= optionIndex; i++) {
+							linesFromOffsetToSelected += optionLines[i].lines.length;
+						}
+						// If selected option doesn't fit, advance scrollOffset
+						while (linesFromOffsetToSelected > maxLines && scrollOffset < optionIndex) {
+							linesFromOffsetToSelected -= optionLines[scrollOffset].lines.length;
+							scrollOffset++;
+						}
+
+						// Now render from scrollOffset, filling up to maxLines
+						const hasAbove = scrollOffset > 0;
+						// Reserve 1 line each for scroll indicators if needed
+						let lineBudget = maxLines - (hasAbove ? 1 : 0);
+
+						// Peek ahead to check if there'll be items below
+						let tempBudget = lineBudget;
+						let tempEnd = scrollOffset;
+						while (tempEnd < totalOpts && tempBudget >= optionLines[tempEnd].lines.length) {
+							tempBudget -= optionLines[tempEnd].lines.length;
+							tempEnd++;
+						}
+						const hasBelow = tempEnd < totalOpts;
+						if (hasBelow) {
+							lineBudget -= 1; // reserve line for "↓ more below"
+						}
+
+						if (hasAbove) {
+							add(theme.fg("dim", `  ↑ ${scrollOffset} more above`));
+						}
+
+						let visibleEnd = scrollOffset;
+						let usedLines = 0;
+						while (visibleEnd < totalOpts) {
+							const optLineCount = optionLines[visibleEnd].lines.length;
+							if (usedLines + optLineCount > lineBudget) break;
+							usedLines += optLineCount;
+							visibleEnd++;
+						}
+
+						for (let i = scrollOffset; i < visibleEnd; i++) {
+							for (const line of optionLines[i].lines) {
+								lines.push(line);
+							}
+						}
+
+						if (visibleEnd < totalOpts) {
+							add(theme.fg("dim", `  ↓ ${totalOpts - visibleEnd} more below`));
 						}
 					}
 
@@ -543,6 +641,16 @@ Example usage:
 						}
 					}
 
+					// Final viewport clipping: if total lines still exceed terminal,
+					// trim from the top (keep the options/help visible at the bottom)
+					const termHeight = getTerminalHeight();
+					if (lines.length > termHeight) {
+						const trimmed = lines.slice(lines.length - termHeight);
+						trimmed[0] = truncateToWidth(theme.fg("dim", "  ↑ scroll up for more"), width);
+						cachedLines = trimmed;
+						return trimmed;
+					}
+
 					cachedLines = lines;
 					return lines;
 				}
@@ -578,6 +686,7 @@ Example usage:
 							if (matchesKey(data, Key.tab) || matchesKey(data, Key.right)) {
 								currentTab = 0;
 								optionIndex = 0;
+								scrollOffset = 0;
 								refresh();
 								return;
 							}
@@ -587,6 +696,7 @@ Example usage:
 							) {
 								currentTab = questions.length - 1;
 								optionIndex = 0;
+								scrollOffset = 0;
 								refresh();
 								return;
 							}
