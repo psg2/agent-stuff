@@ -1,21 +1,25 @@
 ---
 name: npm-publish
-description: Scaffold and publish a new npm package under the @psg2 scope with bun, TypeScript, biome, semantic-release, and GitHub Actions. Use when the user wants to create a new CLI tool, utility, or library and publish it to npm. Triggers on "publish a package", "create a new npm package", "bootstrap a CLI", "set up npm publishing", or any task involving new @psg2/* package creation.
+description: Scaffold and publish npm packages under the @psg2 scope with bun, TypeScript, biome, semantic-release, and GitHub Actions. Use when the user wants to create a new package, publish to npm, bump a version, or release. Triggers on "publish a package", "create a new npm package", "npm publish", "bun publish", "version bump", "release to npm", or any @psg2/* package task. Do not trigger for unrelated uses of "release" (e.g. GitHub releases, press releases).
 ---
 
 # npm Package Publishing
 
 End-to-end workflow for creating and publishing `@psg2/*` packages to npm.
 
-## Stack
+## MANDATORY RULES
 
-- **Runtime:** Bun
-- **Language:** TypeScript (strict, ESNext, bundler resolution)
-- **Linting:** Biome (tabs, double quotes, 100 char line width)
-- **Versioning:** semantic-release (commit-analyzer → npm with provenance → GitHub release)
-- **CI:** GitHub Actions
+- **NEVER ask the user for an OTP code.** `bun publish` opens the user's real browser for OTP automatically. `npm login` does the same for auth. The user just clicks approve — zero manual token/OTP handling.
+- **NEVER run raw npm/bun publish commands directly.** Always use the scripts below — they output status codes that you interpret and communicate to the user.
+- **Scripts output status codes. You interpret them and talk to the user.** Script output is inside collapsed bash blocks the user won't read. All user-facing communication must be direct messages OUTSIDE of bash calls.
 
-## 1. Scaffold the Package
+---
+
+## Workflow A: Scaffold a New Package
+
+Use this when creating a brand-new `@psg2/*` package.
+
+### Step 1: Scaffold
 
 ```bash
 mkdir -p ~/workspace/psg2/<package-name>
@@ -23,7 +27,175 @@ cd ~/workspace/psg2/<package-name>
 git init
 ```
 
-### package.json
+Create these files using the templates in the [Scaffold Templates](#scaffold-templates) section below.
+
+Then install and verify:
+
+```bash
+bun install
+bun run lint
+bun test
+bun run build
+```
+
+Make the initial commit with a `feat:` prefix (triggers semantic-release 1.0.0 later):
+
+```bash
+git add -A
+git commit -m "feat: initial package scaffold"
+```
+
+### Step 2: Initial Publish (0.0.0 placeholder)
+
+Semantic-release needs the package to exist on npm before it takes over:
+
+```bash
+bash ${SKILL_DIR}/scripts/publish.sh --access public
+```
+
+- If `PUBLISH_SUCCESS` → tell the user: "The 0.0.0 placeholder is published. Setting up Trusted Publisher next."
+- If `AUTH_FAILED` → run the [Auth Recovery](#auth-recovery) flow, then retry.
+- If `PUBLISH_ERROR` → show the error output to the user.
+
+### Step 3: Set Up Trusted Publisher (OIDC)
+
+Open the access settings page for the user:
+
+```bash
+open "https://www.npmjs.com/package/@psg2/<package-name>/access"
+```
+
+Then tell the user:
+
+> I've opened the package access page on npmjs.com. Please add a **Trusted Publisher** with these values:
+>
+> | Field | Value |
+> |---|---|
+> | Publisher | GitHub Actions |
+> | Organization or user | `psg2` |
+> | Repository | `<package-name>` |
+> | Workflow filename | `release.yml` |
+> | Environment name | `npm` |
+
+Wait for the user to confirm they've done it.
+
+### Step 4: Create GitHub Repo and Push
+
+```bash
+gh repo create psg2/<package-name> --public --source . --push
+```
+
+The `feat:` commit triggers semantic-release to publish 1.0.0.
+
+### Step 5: Verify and Clean Up
+
+Wait ~30 seconds for CI, then:
+
+```bash
+bash ${SKILL_DIR}/scripts/verify.sh "@psg2/<package-name>" "1.0.0"
+```
+
+Then remove the placeholder:
+
+```bash
+npm unpublish @psg2/<package-name>@0.0.0
+```
+
+---
+
+## Workflow B: Publish a Release (Manual Version)
+
+Use this for packages that don't use semantic-release, or when a direct publish is needed.
+
+### Step 1: Preflight
+
+```bash
+bash ${SKILL_DIR}/scripts/preflight.sh [patch|minor|major]
+```
+
+- If `PREFLIGHT_READY:<name>:<version>` → proceed to Step 2.
+- If `SEMANTIC_RELEASE_DETECTED` → tell the user this package uses semantic-release. Push to main with conventional commits and CI handles it. Stop here.
+- If `BUILD_FAILED` → fix the build error before proceeding.
+
+### Step 2: Write Changelog
+
+Read the commit log from the preflight output. If CHANGELOG.md exists, add an entry at the top matching the existing format. If not, create one. Use the version from preflight. Categorize: Breaking Changes, Added, Changed, Fixed, Security, Deprecated.
+
+### Step 3: Release (Commit + Push)
+
+```bash
+bash ${SKILL_DIR}/scripts/release.sh
+```
+
+- If `RELEASE_DONE:<name>:<version>` → proceed to Step 4.
+- If `NOTHING_TO_COMMIT` → skip to Step 4.
+- If `PUSH_FAILED` → tell the user about the push failure.
+
+### Step 4: Publish
+
+```bash
+bash ${SKILL_DIR}/scripts/publish.sh --access public
+```
+
+- If `PUBLISH_SUCCESS` → proceed to Step 5.
+- If `AUTH_FAILED` → run the [Auth Recovery](#auth-recovery) flow, then retry.
+- If `PUBLISH_ERROR` → show the error to the user.
+
+Tell user: "`bun publish` may open your browser for a quick OTP check — just click approve."
+
+### Step 5: Verify
+
+```bash
+bash ${SKILL_DIR}/scripts/verify.sh "<package-name>" "<version>"
+```
+
+Run this in the background if possible. Tell the user the publish is done.
+
+---
+
+## Workflow C: Semantic-Release Publish (CI)
+
+For packages with `.releaserc.json` and version `0.0.0` — the normal flow:
+
+1. Write code with [conventional commits](#commit-convention).
+2. Push to `main`.
+3. CI runs tests, builds, and semantic-release handles versioning + npm publish.
+
+The agent's role is just to help write good commits and push.
+
+---
+
+## Auth Recovery
+
+When `publish.sh` outputs `AUTH_FAILED`, the user needs to log in.
+
+```bash
+bash ${SKILL_DIR}/scripts/login.sh
+```
+
+This runs `npm login` which opens the user's real default browser for OAuth. No tokens, no OTP codes — just click approve.
+
+- If `LOGIN_SUCCESS:<username>` → tell user: "Logged in as \<username\>. Retrying publish." Then retry `publish.sh`.
+- If `LOGIN_FAILED` → tell user: "npm login failed. Check your browser — the login page may still be open."
+
+---
+
+## Commit Convention
+
+semantic-release uses [Conventional Commits](https://www.conventionalcommits.org/):
+
+| Prefix | Version bump | Example |
+|--------|-------------|---------|
+| `fix:` | patch (1.0.x) | `fix: handle empty config` |
+| `feat:` | minor (1.x.0) | `feat: add github target` |
+| `feat!:` or `BREAKING CHANGE:` | major (x.0.0) | `feat!: rename config format` |
+| `docs:`, `chore:`, `ci:`, `test:` | no release | `docs: update README` |
+
+---
+
+## Scaffold Templates
+
+### package.json (CLI)
 
 ```json
 {
@@ -59,7 +231,9 @@ git init
 }
 ```
 
-For library packages (not CLIs), replace `bin` with `exports`:
+### package.json (Library)
+
+Replace `bin` with `exports`:
 
 ```json
 {
@@ -115,14 +289,6 @@ For library packages (not CLIs), replace `bin` with `exports`:
     }
   }
 }
-```
-
-### .gitignore
-
-```
-node_modules/
-dist/
-*.tgz
 ```
 
 ### .releaserc.json
@@ -195,78 +361,14 @@ jobs:
         run: npx semantic-release
 ```
 
+### .gitignore
+
+```
+node_modules/
+dist/
+*.tgz
+```
+
 ### LICENSE
 
 Use MIT. Set copyright year and `psg2`.
-
-Then install and verify:
-
-```bash
-bun install
-bun run lint
-bun test
-bun run build
-```
-
-## 2. Initial Publish (manual, one-time)
-
-Semantic-release needs the package to exist on npm before it can take over. Publish version `0.0.0` manually as a placeholder.
-
-```bash
-npm login          # if not already logged in
-npm whoami         # verify: should print "psg"
-bun run build
-npm publish --access public
-```
-
-## 3. Set Up npm Trusted Publisher (OIDC)
-
-Go to https://www.npmjs.com/package/@psg2/<package-name>/access and add a Trusted Publisher:
-
-| Field | Value |
-|---|---|
-| Publisher | GitHub Actions |
-| Organization or user | `psg2` |
-| Repository | `<package-name>` |
-| Workflow filename | `release.yml` |
-| Environment name | `npm` |
-
-This lets GitHub Actions publish via OIDC — no npm token needed as a secret.
-
-## 4. Create GitHub Repo and Push
-
-```bash
-gh repo create psg2/<package-name> --public --source . --push
-```
-
-The `feat:` prefix on the first commit triggers semantic-release to publish `1.0.0`.
-
-## 5. Clean Up the Placeholder
-
-After 1.0.0 is published by CI, remove the manual placeholder:
-
-```bash
-npm unpublish @psg2/<package-name>@0.0.0
-```
-
-## Commit Convention
-
-semantic-release uses [Conventional Commits](https://www.conventionalcommits.org/) to determine version bumps:
-
-| Prefix | Version bump | Example |
-|--------|-------------|---------|
-| `fix:` | patch (1.0.x) | `fix: handle empty config` |
-| `feat:` | minor (1.x.0) | `feat: add github target` |
-| `feat!:` or `BREAKING CHANGE:` | major (x.0.0) | `feat!: rename config format` |
-| `docs:`, `chore:`, `ci:`, `test:` | no release | `docs: update README` |
-
-## Checklist
-
-- [ ] `bun run lint` passes
-- [ ] `bun test` passes
-- [ ] `bun run build` produces `dist/`
-- [ ] `npm publish --access public` (initial 0.0.0)
-- [ ] npm Trusted Publisher configured
-- [ ] `gh repo create` + push
-- [ ] CI publishes 1.0.0
-- [ ] `npm unpublish @psg2/<package-name>@0.0.0`
