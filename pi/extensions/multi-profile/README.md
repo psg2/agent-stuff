@@ -74,7 +74,39 @@ Pick from `anthropic:work/claude-sonnet-4-5`, `openai-codex:personal/gpt-5.1`, e
 ```
 /profile list              # show configured profiles
 /profile remove work       # remove a profile
+/profile color work        # set a custom color for the profile indicator
 ```
+
+## Profile Color Indicators
+
+Each profile gets a **colored indicator** so you can instantly see which profile is active:
+
+- **Widget above the editor** — shows `● Profile: WORK` or `● Profile: PERSONAL` in the profile's color
+- **Footer status** — shows a colored dot and profile name in the status bar
+- **Session start notification** — profile names are color-coded in the startup message
+
+### Default colors
+
+| Profile Name | Color |
+|-------------|-------|
+| personal | Blue |
+| work | Orange |
+| team | Green |
+| dev | Purple |
+| staging | Gold |
+| prod | Red |
+| test | Cyan |
+
+Other profile names get auto-assigned from a fallback palette.
+
+### Custom colors
+
+Use `/profile color <name>` to pick from preset colors or enter a custom value:
+
+- **ANSI 256 color number** — e.g. `208` (orange), `39` (blue)
+- **Hex color** — e.g. `#ff6600`, `#00aaff`
+
+Custom colors are saved in `profiles.json`.
 
 ## Config
 
@@ -82,10 +114,12 @@ Profiles are stored in `profiles.json` next to the extension:
 
 ```json
 [
-  { "name": "work", "providers": ["anthropic", "openai-codex", "openai"] },
+  { "name": "work", "providers": ["anthropic", "openai-codex", "openai"], "color": "208" },
   { "name": "personal", "providers": ["anthropic"] }
 ]
 ```
+
+The `color` field is optional. If omitted, the default color for that profile name is used.
 
 ## How It Works
 

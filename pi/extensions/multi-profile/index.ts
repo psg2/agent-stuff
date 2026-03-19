@@ -46,9 +46,8 @@ import {
 	calculateCost,
 	createAssistantMessageEventStream,
 	getModels,
-	loginOpenAICodex,
-	refreshOpenAICodexToken,
 } from "@mariozechner/pi-ai";
+import { loginOpenAICodex, refreshOpenAICodexToken } from "@mariozechner/pi-ai/oauth";
 import type { ExtensionAPI, ProviderConfig, ProviderModelConfig } from "@mariozechner/pi-coding-agent";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -64,6 +63,7 @@ const PROFILES_PATH = join(__dirname, "profiles.json");
 interface ProfileConfig {
 	name: string;
 	providers: string[];
+	color?: string; // ANSI 256 color code or hex (#rrggbb) for profile indicator
 }
 
 interface ProviderInfo {
@@ -497,37 +497,131 @@ function registerProviderProfile(pi: ExtensionAPI, provider: string, profileName
 }
 
 // =============================================================================
+// Profile color indicator
+// =============================================================================
+
+// Default color palette for profiles (ANSI 256 color codes)
+// Each profile gets a distinct, easily distinguishable color
+const DEFAULT_PROFILE_COLORS: Record<string, number> = {
+	personal: 39,   // blue
+	work: 208,       // orange
+	team: 35,        // green
+	dev: 170,        // purple
+	staging: 214,    // gold
+	prod: 196,       // red
+	test: 51,        // cyan
+};
+
+// Fallback colors for profiles not in the default map (cycled)
+const FALLBACK_COLORS = [33, 166, 28, 127, 178, 124, 45, 202, 63, 91];
+
+function getProfileColor(profile: ProfileConfig, index: number): string {
+	// User-configured color takes priority
+	if (profile.color) return profile.color;
+	// Check default map
+	const defaultColor = DEFAULT_PROFILE_COLORS[profile.name.toLowerCase()];
+	if (defaultColor !== undefined) return String(defaultColor);
+	// Fallback cycle
+	return String(FALLBACK_COLORS[index % FALLBACK_COLORS.length]);
+}
+
+function colorize(text: string, color: string): string {
+	if (color.startsWith("#") && color.length === 7) {
+		// Hex color → ANSI true color (24-bit)
+		const r = parseInt(color.slice(1, 3), 16);
+		const g = parseInt(color.slice(3, 5), 16);
+		const b = parseInt(color.slice(5, 7), 16);
+		return `\x1b[38;2;${r};${g};${b}m${text}\x1b[0m`;
+	}
+	// ANSI 256 color
+	const code = parseInt(color, 10);
+	if (!isNaN(code)) {
+		return `\x1b[38;5;${code}m${text}\x1b[0m`;
+	}
+	return text;
+}
+
+function extractProfileName(providerString: string): string | null {
+	const colonIdx = providerString.indexOf(":");
+	if (colonIdx === -1) return null;
+	return providerString.slice(colonIdx + 1);
+}
+
+function buildProfileColorMap(profiles: ProfileConfig[]): Map<string, string> {
+	const map = new Map<string, string>();
+	for (let i = 0; i < profiles.length; i++) {
+		map.set(profiles[i].name, getProfileColor(profiles[i], i));
+	}
+	return map;
+}
+
+// =============================================================================
 // Extension
 // =============================================================================
 
 export default function (pi: ExtensionAPI) {
 	const profiles = loadProfiles();
+	const profileColorMap = buildProfileColorMap(profiles);
+
 	for (const profile of profiles) {
 		for (const provider of profile.providers) {
 			registerProviderProfile(pi, provider, profile.name);
 		}
 	}
 
+	function updateProfileIndicator(ctx: { ui: any; model?: any; hasUI?: boolean }, provider?: string) {
+		if (ctx.hasUI === false) return;
+		const providerStr = provider ?? ctx.model?.provider;
+		if (!providerStr) {
+			ctx.ui.setStatus("multi-profile", undefined);
+			return;
+		}
+
+		const profileName = extractProfileName(providerStr);
+		if (!profileName || !profileColorMap.has(profileName)) {
+			// Not a multi-profile provider, clear indicator
+			ctx.ui.setStatus("multi-profile", undefined);
+			return;
+		}
+
+		const color = profileColorMap.get(profileName)!;
+
+		// Footer status: colored dot + profile name
+		ctx.ui.setStatus("multi-profile", `${colorize("●", color)} Profile: ${colorize(profileName.toUpperCase(), color)}`);
+	}
+
 	pi.on("session_start", async (_event, ctx) => {
 		if (profiles.length > 0) {
-			const summary = profiles.map((p) => `${p.name} (${p.providers.join(", ")})`).join("; ");
+			const summary = profiles.map((p) => {
+				const color = profileColorMap.get(p.name)!;
+				return `${colorize(p.name, color)} (${p.providers.join(", ")})`;
+			}).join("; ");
 			ctx.ui.notify(`Multi-profile: ${summary}`, "info");
+			updateProfileIndicator(ctx);
 		}
 	});
 
+	pi.on("model_select", async (event, ctx) => {
+		updateProfileIndicator(ctx, event.model.provider);
+	});
+
+	pi.on("session_switch", async (_event, ctx) => {
+		updateProfileIndicator(ctx);
+	});
+
 	pi.registerCommand("profile", {
-		description: "Manage credential profiles (add/remove/list)",
+		description: "Manage credential profiles (add/remove/list/color)",
 		getArgumentCompletions: (prefix: string) => {
-			const subcommands = ["add", "remove", "list"];
+			const subcommands = ["add", "remove", "list", "color"];
 			const parts = prefix.split(/\s+/);
 			if (parts.length <= 1) {
 				const filtered = subcommands.filter((s) => s.startsWith(parts[0] ?? ""));
 				return filtered.length > 0 ? filtered.map((s) => ({ value: s, label: s })) : null;
 			}
-			if (parts[0] === "remove" && parts.length === 2) {
+			if ((parts[0] === "remove" || parts[0] === "color") && parts.length === 2) {
 				const current = loadProfiles();
 				const filtered = current.filter((p) => p.name.startsWith(parts[1] ?? ""));
-				return filtered.length > 0 ? filtered.map((p) => ({ value: `remove ${p.name}`, label: p.name })) : null;
+				return filtered.length > 0 ? filtered.map((p) => ({ value: `${parts[0]} ${p.name}`, label: p.name })) : null;
 			}
 			return null;
 		},
@@ -541,7 +635,10 @@ export default function (pi: ExtensionAPI) {
 					ctx.ui.notify("No profiles configured. Use /profile add <name>", "info");
 				} else {
 					for (const p of current) {
-						ctx.ui.notify(`${p.name}: ${p.providers.join(", ")}`, "info");
+						const color = getProfileColor(p, current.indexOf(p));
+						const dot = colorize("●", color);
+						const colorLabel = p.color ? ` [${p.color}]` : "";
+						ctx.ui.notify(`${dot} ${p.name}: ${p.providers.join(", ")}${colorLabel}`, "info");
 					}
 				}
 				return;
@@ -624,7 +721,63 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 
-			ctx.ui.notify("Usage: /profile add|remove|list [name]", "info");
+			if (subcommand === "color") {
+				let name = parts[1];
+				const current = loadProfiles();
+				if (!name) {
+					if (current.length === 0) {
+						ctx.ui.notify("No profiles to color", "info");
+						return;
+					}
+					name = (await ctx.ui.select("Set color for which profile?", current.map((p) => p.name))) ?? "";
+				}
+				name = name.trim();
+				if (!name) return;
+				const profile = current.find((p) => p.name === name);
+				if (!profile) {
+					ctx.ui.notify(`Profile "${name}" not found`, "error");
+					return;
+				}
+
+				// Show color preview options
+				const colorOptions = [
+					{ label: `${colorize("● Blue", "39")}`, value: "39" },
+					{ label: `${colorize("● Orange", "208")}`, value: "208" },
+					{ label: `${colorize("● Green", "35")}`, value: "35" },
+					{ label: `${colorize("● Purple", "170")}`, value: "170" },
+					{ label: `${colorize("● Red", "196")}`, value: "196" },
+					{ label: `${colorize("● Cyan", "51")}`, value: "51" },
+					{ label: `${colorize("● Gold", "214")}`, value: "214" },
+					{ label: `${colorize("● Pink", "205")}`, value: "205" },
+					{ label: `${colorize("● Lime", "118")}`, value: "118" },
+					{ label: `${colorize("● Teal", "30")}`, value: "30" },
+					{ label: "Custom (enter hex/ANSI code)", value: "custom" },
+				];
+				const colorChoice = await ctx.ui.select(
+					`Pick a color for "${name}":`,
+					colorOptions.map((o) => o.label),
+				);
+				if (!colorChoice) return;
+
+				const selected = colorOptions.find((o) => o.label === colorChoice);
+				let colorValue: string;
+				if (!selected || selected.value === "custom") {
+					const custom = await ctx.ui.input("Enter color (hex #rrggbb or ANSI 256 number):", "#ff6600 or 208");
+					if (!custom) return;
+					colorValue = custom.trim();
+				} else {
+					colorValue = selected.value;
+				}
+
+				profile.color = colorValue;
+				saveProfiles(current);
+				profileColorMap.set(name, colorValue);
+				ctx.ui.notify(`Profile "${name}" color set to ${colorize("●", colorValue)} (${colorValue})`, "info");
+				updateProfileIndicator(ctx);
+				return;
+			}
+
+			ctx.ui.notify("Usage: /profile add|remove|list|color [name]", "info");
 		},
 	});
 }
