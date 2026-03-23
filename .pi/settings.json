@@ -1,0 +1,9 @@
+{
+  "packages": [
+    {
+      "source": "git:github.com/tmustier/pi-extensions",
+      "extensions": ["ralph-wiggum/index.ts"],
+      "skills": ["ralph-wiggum/SKILL.md"]
+    }
+  ]
+}
