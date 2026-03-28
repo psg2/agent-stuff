@@ -113,6 +113,7 @@ Example usage:
 - Getting user preferences for design decisions
 - Confirming understanding of a problem before solving it
 - Gathering context about the codebase or project`,
+		promptSnippet: "Ask clarifying questions to the user with single or multi-question flows",
 		parameters: AskParams,
 
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
