@@ -244,9 +244,4 @@ export default function (pi: ExtensionAPI): void {
 	pi.on("turn_end", async () => {
 		await refreshGitStatus();
 	});
-
-	pi.on("session_switch", async (_event, ctx) => {
-		await refreshGitStatus();
-		installFooter(ctx);
-	});
 }

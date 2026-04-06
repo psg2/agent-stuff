@@ -95,9 +95,15 @@ function patchOrphanedToolCalls(messages: AgentMessage[]): { messages: AgentMess
 export default function (pi: ExtensionAPI) {
 	let needsRepair = false;
 
-	// On session load, check if the session already has orphaned tool calls
-	// (e.g. resuming a previously corrupted session)
-	pi.on("session_start", async (_event, ctx) => {
+	// On session load, check for orphaned tool calls.
+	// On new/fork, reset the flag (fresh session, no orphans possible).
+	// On resume/reload, scan for orphans from a previous interruption.
+	pi.on("session_start", async (event, ctx) => {
+		if (event.reason === "new" || event.reason === "fork") {
+			needsRepair = false;
+			return;
+		}
+
 		const entries = ctx.sessionManager.getBranch();
 		const messages: AgentMessage[] = [];
 		for (const entry of entries) {
@@ -107,6 +113,8 @@ export default function (pi: ExtensionAPI) {
 		if (hasOrphanedToolCalls(messages)) {
 			needsRepair = true;
 			ctx.ui.notify("Detected orphaned tool calls from a previous interruption — will auto-fix on next request.", "warning");
+		} else {
+			needsRepair = false;
 		}
 	});
 
@@ -134,11 +142,6 @@ export default function (pi: ExtensionAPI) {
 		}
 
 		// If we thought we needed repair but found nothing, clear the flag
-		needsRepair = false;
-	});
-
-	// Reset on session switch
-	pi.on("session_switch", async () => {
 		needsRepair = false;
 	});
 }
