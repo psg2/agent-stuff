@@ -46,3 +46,9 @@ claude-switch remove old-account
 ```
 
 After switching, restart Claude Code for changes to take effect.
+
+## Shell Aliases
+
+Setup also adds these aliases to `~/.zshrc`:
+
+- `cc` — runs `claude --dangerously-skip-permissions`
