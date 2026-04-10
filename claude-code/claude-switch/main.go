@@ -62,7 +62,7 @@ func profilesDir() string {
 }
 
 func profileConfigDir(name string) string {
-	return filepath.Join(os.Getenv("HOME"), ".claude-profiles", name)
+	return filepath.Join(os.Getenv("HOME"), ".claude-"+name)
 }
 
 func claudeJSONPath() string {
@@ -381,7 +381,7 @@ func usage() {
 	fmt.Println("  use <name>            Legacy: swap default credentials")
 	fmt.Println()
 	fmt.Printf("%sHOW IT WORKS%s\n", bold, reset)
-	fmt.Println("  Each profile gets its own CLAUDE_CONFIG_DIR (~/.claude-profiles/<name>).")
+	fmt.Println("  Each profile gets its own CLAUDE_CONFIG_DIR (~/.claude-<name>).")
 	fmt.Println("  Claude Code automatically uses a distinct Keychain entry per config dir,")
 	fmt.Println("  so profiles are fully isolated — no credential conflicts.")
 	fmt.Println()

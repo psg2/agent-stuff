@@ -16,7 +16,7 @@ This builds all tools and symlinks them to `~/.local/bin/`.
 
 Manage multiple Claude Code profiles (e.g. personal vs work accounts).
 
-Each profile gets its own `CLAUDE_CONFIG_DIR` (`~/.claude-profiles/<name>`).
+Each profile gets its own `CLAUDE_CONFIG_DIR` (`~/.claude-<name>`).
 Claude Code automatically creates a distinct Keychain entry per config dir,
 so profiles are fully isolated — no credential conflicts, concurrent sessions
 just work.
@@ -79,7 +79,7 @@ claude-switch remove old-acct # delete a profile
 on the child process:
 
 ```
-CLAUDE_CONFIG_DIR=~/.claude-profiles/<name>
+CLAUDE_CONFIG_DIR=~/.claude-<name>
 ```
 
 Claude Code reads settings, credentials, session history, and plugins from this
@@ -95,8 +95,8 @@ Global skills (`npx skills add -g <skill>`) install to `~/.claude/skills/`
 (the default config dir). To share them across profiles, symlink:
 
 ```bash
-ln -s ~/.claude/skills ~/.claude-profiles/work/skills
-ln -s ~/.claude/skills ~/.claude-profiles/personal/skills
+ln -s ~/.claude/skills ~/.claude-work/skills
+ln -s ~/.claude/skills ~/.claude-personal/skills
 ```
 
 #### Legacy: swap default credentials
@@ -110,6 +110,9 @@ claude-switch use work      # requires restarting claude
 
 ## Shell Aliases
 
-Setup also adds these aliases to `~/.zshrc`:
+Setup adds these to `~/.zshrc`:
 
-- `cc` — runs `claude --dangerously-skip-permissions`
+- `cc-work` / `cc-personal` — launch claude with work/personal profile
+- `cc-work-yolo` / `cc-personal-yolo` — same + `--dangerously-skip-permissions`
+- `claude -a <name>` — launch with any saved profile (via `claude-switch init`)
+- `claude --yolo` — alias for `--dangerously-skip-permissions`
