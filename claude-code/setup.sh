@@ -35,19 +35,24 @@ printf "  ${GREEN}✓${RESET} Linked to ${BOLD}%s/claude-switch${RESET}\n" "$BIN
 
 # Install shell config
 SHELL_RC="${HOME}/.zshrc"
-ALIAS_LINE='alias cc="claude --dangerously-skip-permissions"'
-INIT_LINE='eval "$(claude-switch init)"'
 ALIAS_MARKER="# claude-code/setup.sh"
 
 if grep -qF "$ALIAS_MARKER" "$SHELL_RC" 2>/dev/null; then
   printf "  ${DIM}Shell config already in %s${RESET}\n" "$SHELL_RC"
 else
-  {
-    printf '\n%s\n' "$ALIAS_MARKER"
-    printf '%s\n' "$ALIAS_LINE"
-    printf '%s\n' "$INIT_LINE"
-  } >> "$SHELL_RC"
-  printf "  ${GREEN}✓${RESET} Added alias ${BOLD}cc${RESET} and ${BOLD}claude -a${RESET} integration to %s\n" "$SHELL_RC"
+  cat >> "$SHELL_RC" <<'SHELL'
+
+# claude-code/setup.sh
+alias cc="claude --dangerously-skip-permissions"
+alias claude-work='CLAUDE_CONFIG_DIR=~/.claude-work claude'
+alias claude-personal='CLAUDE_CONFIG_DIR=~/.claude-personal claude'
+eval "$(claude-switch init)"
+SHELL
+  printf "  ${GREEN}✓${RESET} Added to %s:\n" "$SHELL_RC"
+  printf "       ${BOLD}cc${RESET}               — claude --dangerously-skip-permissions\n"
+  printf "       ${BOLD}claude-work${RESET}      — claude with work profile\n"
+  printf "       ${BOLD}claude-personal${RESET}  — claude with personal profile\n"
+  printf "       ${BOLD}claude -a <name>${RESET} — claude-switch shell integration\n"
 fi
 
 echo ""
