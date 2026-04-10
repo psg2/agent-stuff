@@ -14,41 +14,105 @@ This builds all tools and symlinks them to `~/.local/bin/`.
 
 ### claude-switch
 
-Switch between multiple Claude Code subscriptions (e.g. personal vs work accounts).
+Manage multiple Claude Code profiles (e.g. personal vs work accounts).
 
-Credentials are stored securely in the platform credential store:
-- **macOS**: each profile gets its own Keychain entry (`Claude Code-credentials.<name>`)
-- **Linux/Windows**: per-profile files under `~/.config/claude-switch/credentials/` with `0600` permissions
+Each profile gets its own `CLAUDE_CONFIG_DIR` (`~/.claude-<name>`).
+Claude Code automatically creates a distinct Keychain entry per config dir,
+so profiles are fully isolated — no credential conflicts, concurrent sessions
+just work.
 
-Profile metadata (name, email, org - no secrets) is saved to `~/.config/claude-switch/profiles/`.
-
-**Usage:**
+#### Getting started
 
 ```bash
-# Save your current session as a named profile
+# 1. Save your current session as a profile
 claude-switch save personal
 
-# Log into another account, then save it too
+# 2. Log in as personal in the profile's own config dir
+claude-switch run personal
+# inside claude: /login (first time only)
+
+# 3. Log into another account normally, then repeat
 claude /login
 claude-switch save work
-
-# List all profiles (arrow marks the active one)
-claude-switch list
-
-# Switch to a different profile
-claude-switch use work
-
-# Show which profile is currently active
-claude-switch current
-
-# Remove a profile
-claude-switch remove old-account
+claude-switch run work
+# inside claude: /login (first time only)
 ```
 
-After switching, restart Claude Code for changes to take effect.
+#### Shell integration (recommended)
+
+Add to `~/.zshrc` or `~/.bashrc`:
+
+```bash
+eval "$(claude-switch init)"
+```
+
+Then use the `-a` flag:
+
+```bash
+claude -a work                # terminal 1
+claude -a personal            # terminal 2 (concurrent)
+claude -a work -p 'fix bug'  # pass flags through
+claude                        # normal launch (default config)
+```
+
+#### Direct launch
+
+Without shell integration, use `run`:
+
+```bash
+claude-switch run work
+claude-switch run work -- -p 'summarize this repo'
+claude-switch run work -- --dangerously-skip-permissions
+```
+
+#### Managing profiles
+
+```bash
+claude-switch list            # show all profiles with account info
+claude-switch current         # show the active profile
+claude-switch remove old-acct # delete a profile
+```
+
+#### How it works
+
+`run` (and the `claude -a` shell integration) just sets one environment variable
+on the child process:
+
+```
+CLAUDE_CONFIG_DIR=~/.claude-<name>
+```
+
+Claude Code reads settings, credentials, session history, and plugins from this
+path, and on macOS uses a distinct Keychain entry keyed to the config dir path.
+No OAuth token extraction, no credential swapping, no shell env pollution.
+
+#### Skills with multiple profiles
+
+Project-level skills (`npx skills add <skill>`) install to `.claude/skills/`
+in the project directory — shared across all profiles automatically.
+
+Global skills (`npx skills add -g <skill>`) install to `~/.claude/skills/`
+(the default config dir). To share them across profiles, symlink:
+
+```bash
+ln -s ~/.claude/skills ~/.claude-work/skills
+ln -s ~/.claude/skills ~/.claude-personal/skills
+```
+
+#### Legacy: swap default credentials
+
+The `use` command swaps the default Keychain/credentials file directly.
+Only one profile can be active at a time. Prefer `run` for concurrent use.
+
+```bash
+claude-switch use work      # requires restarting claude
+```
 
 ## Shell Aliases
 
-Setup also adds these aliases to `~/.zshrc`:
+Setup adds these to `~/.zshrc`:
 
-- `cc` — runs `claude --dangerously-skip-permissions`
+- `cc-work` / `cc-personal` — launch claude with work/personal profile
+- `cc-work-yolo` / `cc-personal-yolo` — same + `--dangerously-skip-permissions`
+- `claude -a <name>` — launch with any saved profile (via `claude-switch init`)
+- `claude --yolo` — alias for `--dangerously-skip-permissions`
