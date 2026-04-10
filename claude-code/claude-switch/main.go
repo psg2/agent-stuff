@@ -23,12 +23,9 @@ const (
 	reset  = "\033[0m"
 )
 
-// Default OAuth scopes for Claude Code
-const defaultOAuthScopes = "user:profile user:inference user:sessions:claude_code"
-
 // Profile is the saved profile on disk (metadata only, no secrets).
-// Credentials are stored in the platform credential store (Keychain on macOS,
-// file with 0600 permissions on Linux/Windows).
+// Each profile maps to its own CLAUDE_CONFIG_DIR, which gives it an
+// isolated Keychain entry (macOS) or credentials file (Linux/Windows).
 type Profile struct {
 	Name             string          `json:"name"`
 	SavedAt          string          `json:"savedAt"`
@@ -64,14 +61,6 @@ func profilesDir() string {
 	return filepath.Join(os.Getenv("HOME"), ".config", "claude-switch", "profiles")
 }
 
-func tokenDir() string {
-	return filepath.Join(os.Getenv("HOME"), ".config", "claude-switch", "tokens")
-}
-
-func tokenFilePath(name string) string {
-	return filepath.Join(tokenDir(), name)
-}
-
 func profileConfigDir(name string) string {
 	return filepath.Join(os.Getenv("HOME"), ".claude-profiles", name)
 }
@@ -84,6 +73,11 @@ func ensureProfilesDir() {
 	if err := os.MkdirAll(profilesDir(), 0755); err != nil {
 		die(fmt.Sprintf("Cannot create profiles directory: %v", err))
 	}
+}
+
+// shellQuote wraps a string in single quotes, escaping embedded single quotes.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
 }
 
 // ── Credential storage (platform-specific) ──────────────────────────────────
@@ -202,123 +196,14 @@ func profileAccountUUID(p Profile) string {
 	return acct.AccountUUID
 }
 
-// ── Token helpers ──────────────────────────────────────────────────────────
-
-// extractedTokens holds OAuth tokens parsed from stored credentials.
-type extractedTokens struct {
-	accessToken  string
-	refreshToken string
-	scopes       string
-}
-
-// extractTokens tries to find OAuth tokens in the credentials JSON.
-// Claude Code stores credentials as {"claudeAiOauth": {...}}.
-func extractTokens(creds json.RawMessage) extractedTokens {
-	var t extractedTokens
-
-	var credMap map[string]json.RawMessage
-	if err := json.Unmarshal(creds, &credMap); err != nil {
-		return t
-	}
-
-	oauthRaw, ok := credMap["claudeAiOauth"]
-	if !ok {
-		return t
-	}
-
-	var oauthMap map[string]interface{}
-	if err := json.Unmarshal(oauthRaw, &oauthMap); err != nil {
-		return t
-	}
-
-	findStr := func(keys ...string) string {
-		for _, k := range keys {
-			if v, ok := oauthMap[k]; ok {
-				if s, ok := v.(string); ok && s != "" {
-					return s
-				}
-			}
-		}
-		return ""
-	}
-
-	t.accessToken = findStr("accessToken", "access_token", "token")
-	t.refreshToken = findStr("refreshToken", "refresh_token")
-	t.scopes = findStr("scopes", "scope")
-	return t
-}
-
-// shellQuote wraps a string in single quotes, escaping embedded single quotes.
-func shellQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
-}
-
-// ── Env resolution ─────────────────────────────────────────────────────────
-
-type envPair struct {
-	key, value string
-}
-
-// resolveProfileEnv returns the env vars needed to run Claude with a profile.
-// Returns nil if no tokens can be resolved.
-func resolveProfileEnv(name string) []envPair {
-	_ = loadProfile(name) // verify profile exists
-
-	var pairs []envPair
-
-	// 1. Check for manually-set token (highest priority)
-	if data, err := os.ReadFile(tokenFilePath(name)); err == nil {
-		token := strings.TrimSpace(string(data))
-		if token != "" {
-			pairs = append(pairs, envPair{"CLAUDE_CODE_OAUTH_TOKEN", token})
-		}
-	}
-
-	// 2. Try extracting tokens from stored credentials
-	if len(pairs) == 0 {
-		creds, err := loadProfileCredentials(name)
-		if err == nil {
-			tokens := extractTokens(creds)
-
-			if tokens.refreshToken != "" {
-				pairs = append(pairs, envPair{"CLAUDE_CODE_OAUTH_REFRESH_TOKEN", tokens.refreshToken})
-				scopes := tokens.scopes
-				if scopes == "" {
-					scopes = defaultOAuthScopes
-				}
-				pairs = append(pairs, envPair{"CLAUDE_CODE_OAUTH_SCOPES", scopes})
-			}
-
-			if tokens.accessToken != "" {
-				pairs = append(pairs, envPair{"CLAUDE_CODE_OAUTH_TOKEN", tokens.accessToken})
-			}
-		}
-	}
-
-	if len(pairs) == 0 {
-		return nil
-	}
-
-	// Add config dir for full session isolation
-	pairs = append(pairs, envPair{"CLAUDE_CONFIG_DIR", profileConfigDir(name)})
-	return pairs
-}
-
-func dieNoToken(name string) {
-	fmt.Fprintf(os.Stderr, "%serror:%s No OAuth token found for profile '%s'.\n", red, reset, name)
-	fmt.Fprintf(os.Stderr, "\nTo set one:\n")
-	fmt.Fprintf(os.Stderr, "  1. Switch to the profile:  %sclaude-switch use %s%s\n", cyan, name, reset)
-	fmt.Fprintf(os.Stderr, "  2. Generate a token:       %sclaude setup-token%s\n", cyan, reset)
-	fmt.Fprintf(os.Stderr, "  3. Save the token:         %sclaude-switch token %s <token>%s\n", cyan, name, reset)
-	os.Exit(1)
-}
-
 // ── Commands ────────────────────────────────────────────────────────────────
 
 func cmdRun(name string, claudeArgs []string) {
-	pairs := resolveProfileEnv(name)
-	if pairs == nil {
-		dieNoToken(name)
+	_ = loadProfile(name) // verify profile exists
+
+	configDir := profileConfigDir(name)
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		die(fmt.Sprintf("Cannot create config directory: %v", err))
 	}
 
 	claudePath, err := exec.LookPath("claude")
@@ -326,11 +211,9 @@ func cmdRun(name string, claudeArgs []string) {
 		die("Cannot find 'claude' in PATH. Is Claude Code installed?")
 	}
 
-	// Inherit current env + add profile overrides
+	// Inherit current env + set CLAUDE_CONFIG_DIR
 	env := os.Environ()
-	for _, p := range pairs {
-		env = append(env, p.key+"="+p.value)
-	}
+	env = append(env, "CLAUDE_CONFIG_DIR="+configDir)
 
 	cmd := exec.Command(claudePath, claudeArgs...)
 	cmd.Env = env
@@ -347,13 +230,8 @@ func cmdRun(name string, claudeArgs []string) {
 }
 
 func cmdEnv(name string) {
-	pairs := resolveProfileEnv(name)
-	if pairs == nil {
-		dieNoToken(name)
-	}
-	for _, p := range pairs {
-		fmt.Printf("export %s=%s\n", p.key, shellQuote(p.value))
-	}
+	_ = loadProfile(name) // verify profile exists
+	fmt.Printf("export CLAUDE_CONFIG_DIR=%s\n", shellQuote(profileConfigDir(name)))
 }
 
 func cmdInit() {
@@ -371,48 +249,13 @@ claude() {
 `)
 }
 
-func cmdToken(name string, args []string) {
-	_ = loadProfile(name) // verify profile exists
-
-	if len(args) == 0 {
-		// Show current token (masked)
-		if data, err := os.ReadFile(tokenFilePath(name)); err == nil {
-			t := strings.TrimSpace(string(data))
-			if len(t) > 16 {
-				fmt.Printf("%s...%s\n", t[:8], t[len(t)-4:])
-			} else if t != "" {
-				fmt.Println("(set)")
-			} else {
-				fmt.Printf("%sNo token set for profile '%s'%s\n", yellow, name, reset)
-			}
-		} else {
-			fmt.Printf("%sNo token set for profile '%s'%s\n", yellow, name, reset)
-		}
-		return
-	}
-
-	token := strings.TrimSpace(args[0])
-	if token == "" {
-		die("Token cannot be empty")
-	}
-
-	if err := os.MkdirAll(tokenDir(), 0700); err != nil {
-		die(fmt.Sprintf("Cannot create token directory: %v", err))
-	}
-	if err := os.WriteFile(tokenFilePath(name), []byte(token), 0600); err != nil {
-		die(fmt.Sprintf("Cannot save token: %v", err))
-	}
-	fmt.Printf("%sToken saved for profile '%s'%s\n", green, name, reset)
-	fmt.Printf("Use it with: %sclaude-switch run %s%s\n", cyan, name, reset)
-}
-
 func cmdSave(name string) {
 	ensureProfilesDir()
 
 	rawOAuth, acct := readOAuthAccount()
 	creds := readCredentials()
 
-	// Save credentials to platform credential store
+	// Save credentials to platform credential store (for legacy 'use' command)
 	if err := saveProfileCredentials(name, creds); err != nil {
 		die(fmt.Sprintf("Cannot save credentials for profile '%s': %v", name, err))
 	}
@@ -430,7 +273,14 @@ func cmdSave(name string) {
 		OAuthAccount:     rawOAuth,
 	}
 	saveProfile(p)
+
+	// Create profile config dir for the run/env workflow
+	configDir := profileConfigDir(name)
+	os.MkdirAll(configDir, 0755)
+
 	fmt.Printf("%sSaved profile '%s'%s (%s, %s)\n", green, name, reset, acct.EmailAddress, c.ClaudeAiOauth.SubscriptionType)
+	fmt.Printf("%sConfig dir: %s%s\n", dim, configDir, reset)
+	fmt.Printf("%sRun '%sclaude-switch run %s%s' and /login to authenticate this profile.%s\n", yellow, cyan, name, yellow, reset)
 }
 
 func cmdUse(name string) {
@@ -459,11 +309,20 @@ func cmdList() {
 	currentUUID := currentAccountUUID()
 	for _, p := range profiles {
 		uuid := profileAccountUUID(p)
+		marker := "  "
+		nameColor := ""
+		nameReset := ""
+		subColor := dim
 		if uuid == currentUUID {
-			fmt.Printf("  %s%s-> %s%s  %s%s%s  %s%s%s\n", green, bold, p.Name, reset, dim, p.Email, reset, green, p.SubscriptionType, reset)
-		} else {
-			fmt.Printf("     %s  %s%s%s  %s%s%s\n", p.Name, dim, p.Email, reset, dim, p.SubscriptionType, reset)
+			marker = fmt.Sprintf("%s%s->%s", green, bold, reset)
+			nameColor = fmt.Sprintf("%s%s", green, bold)
+			nameReset = reset
+			subColor = green
 		}
+		fmt.Printf("  %s %s%s%s  %s%s%s  %s%s%s\n",
+			marker, nameColor, p.Name, nameReset,
+			dim, p.Email, reset,
+			subColor, p.SubscriptionType, reset)
 	}
 }
 
@@ -490,40 +349,48 @@ func cmdRemove(name string) {
 	}
 	// Clean up credentials from platform store (best effort)
 	deleteProfileCredentials(name)
-	// Clean up manually-set token (best effort)
-	os.Remove(tokenFilePath(name))
 	fmt.Printf("%sRemoved profile '%s'%s\n", green, name, reset)
+
+	configDir := profileConfigDir(name)
+	if _, err := os.Stat(configDir); err == nil {
+		fmt.Printf("%sNote: config dir %s was not removed. Delete it manually if desired.%s\n", dim, configDir, reset)
+	}
 }
 
 func usage() {
-	fmt.Printf("%sclaude-switch%s — switch between Claude Code subscriptions\n", bold, reset)
+	fmt.Printf("%sclaude-switch%s — manage multiple Claude Code profiles\n", bold, reset)
 	fmt.Println()
 	fmt.Printf("%sUSAGE%s\n", bold, reset)
 	fmt.Println("  claude-switch <command> [args]")
 	fmt.Println()
 	fmt.Printf("%sCOMMANDS%s\n", bold, reset)
 	fmt.Println("  save <name>           Save current session as a named profile")
-	fmt.Println("  run <name> [-- args]  Launch claude directly with a profile")
-	fmt.Println("  use <name>            Switch the default profile (legacy, restarts needed)")
-	fmt.Println("  env <name>            Print env vars (for scripting)")
+	fmt.Println("  run <name> [-- args]  Launch claude with a profile's config dir")
+	fmt.Println("  env <name>            Print CLAUDE_CONFIG_DIR export (for scripting)")
 	fmt.Println("  init                  Print shell integration (for ~/.zshrc)")
-	fmt.Println("  token <name> [token]  Set or show an OAuth token for a profile")
 	fmt.Println("  list                  Show all profiles (arrow marks active)")
 	fmt.Println("  current               Show the active profile")
 	fmt.Println("  remove <name>         Delete a saved profile")
+	fmt.Println("  use <name>            Legacy: swap default credentials")
+	fmt.Println()
+	fmt.Printf("%sHOW IT WORKS%s\n", bold, reset)
+	fmt.Println("  Each profile gets its own CLAUDE_CONFIG_DIR (~/.claude-profiles/<name>).")
+	fmt.Println("  Claude Code automatically uses a distinct Keychain entry per config dir,")
+	fmt.Println("  so profiles are fully isolated — no credential conflicts.")
 	fmt.Println()
 	fmt.Printf("%sPLATFORM%s\n", bold, reset)
-	fmt.Printf("  %s/%s", runtime.GOOS, runtime.GOARCH)
-	switch runtime.GOOS {
-	case "darwin":
-		fmt.Println(" (credentials via macOS Keychain)")
-	case "linux", "windows":
-		fmt.Println(" (credentials via ~/.claude/.credentials.json)")
-	}
+	fmt.Printf("  %s/%s\n", runtime.GOOS, runtime.GOARCH)
 	fmt.Println()
 	fmt.Printf("%sEXAMPLES%s\n", bold, reset)
 	fmt.Println()
-	fmt.Printf("  %sLaunch directly with a profile:%s\n", dim, reset)
+	fmt.Printf("  %sSetup:%s\n", dim, reset)
+	fmt.Println("  claude-switch save personal          # save current account")
+	fmt.Println("  claude-switch run personal            # login in profile config dir")
+	fmt.Println("  claude /login                         # log into another account")
+	fmt.Println("  claude-switch save work")
+	fmt.Println("  claude-switch run work")
+	fmt.Println()
+	fmt.Printf("  %sDaily use:%s\n", dim, reset)
 	fmt.Println("  claude-switch run work")
 	fmt.Println("  claude-switch run personal -- -p 'summarize this repo'")
 	fmt.Println()
@@ -531,15 +398,6 @@ func usage() {
 	fmt.Printf("  eval \"$(claude-switch init)\"   %s# add to ~/.zshrc%s\n", dim, reset)
 	fmt.Println("  claude -a work                  # launch with work profile")
 	fmt.Println("  claude -a personal              # concurrent in another terminal")
-	fmt.Println()
-	fmt.Printf("  %sSave profiles:%s\n", dim, reset)
-	fmt.Println("  claude-switch save personal")
-	fmt.Println("  claude /login                   # log into another account")
-	fmt.Println("  claude-switch save work")
-	fmt.Println()
-	fmt.Printf("  %sManual token (if auto-extraction fails):%s\n", dim, reset)
-	fmt.Println("  claude setup-token                       # generate token")
-	fmt.Println("  claude-switch token work <paste-token>   # save it")
 }
 
 func main() {
@@ -581,11 +439,6 @@ func main() {
 		cmdEnv(arg)
 	case "init":
 		cmdInit()
-	case "token":
-		if arg == "" {
-			die("Usage: claude-switch token <name> [token]")
-		}
-		cmdToken(arg, os.Args[3:])
 	case "list", "ls":
 		cmdList()
 	case "current":
