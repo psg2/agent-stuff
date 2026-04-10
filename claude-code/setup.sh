@@ -33,16 +33,21 @@ mkdir -p "$BIN_DIR"
 ln -sf "$SCRIPT_DIR/claude-switch/claude-switch" "$BIN_DIR/claude-switch"
 printf "  ${GREEN}✓${RESET} Linked to ${BOLD}%s/claude-switch${RESET}\n" "$BIN_DIR"
 
-# Install shell alias
+# Install shell config
 SHELL_RC="${HOME}/.zshrc"
 ALIAS_LINE='alias cc="claude --dangerously-skip-permissions"'
+INIT_LINE='eval "$(claude-switch init)"'
 ALIAS_MARKER="# claude-code/setup.sh"
 
 if grep -qF "$ALIAS_MARKER" "$SHELL_RC" 2>/dev/null; then
-  printf "  ${DIM}Alias 'cc' already in %s${RESET}\n" "$SHELL_RC"
+  printf "  ${DIM}Shell config already in %s${RESET}\n" "$SHELL_RC"
 else
-  printf '\n%s\n%s\n' "$ALIAS_MARKER" "$ALIAS_LINE" >> "$SHELL_RC"
-  printf "  ${GREEN}✓${RESET} Added alias ${BOLD}cc${RESET} to %s\n" "$SHELL_RC"
+  {
+    printf '\n%s\n' "$ALIAS_MARKER"
+    printf '%s\n' "$ALIAS_LINE"
+    printf '%s\n' "$INIT_LINE"
+  } >> "$SHELL_RC"
+  printf "  ${GREEN}✓${RESET} Added alias ${BOLD}cc${RESET} and ${BOLD}claude -a${RESET} integration to %s\n" "$SHELL_RC"
 fi
 
 echo ""

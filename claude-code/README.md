@@ -22,72 +22,81 @@ Credentials are stored securely in the platform credential store:
 
 Profile metadata (name, email, org - no secrets) is saved to `~/.config/claude-switch/profiles/`.
 
-#### Save & switch (classic)
+#### Getting started
 
 ```bash
-# Save your current session as a named profile
+# 1. Save your current session as a named profile
 claude-switch save personal
 
-# Log into another account, then save it too
+# 2. Log into another account, then save it
 claude /login
 claude-switch save work
 
-# List all profiles (arrow marks the active one)
-claude-switch list
-
-# Switch to a different profile (exclusive — requires restart)
-claude-switch use work
-
-# Show which profile is currently active
-claude-switch current
-
-# Remove a profile
-claude-switch remove old-account
+# 3. Launch claude with any profile
+claude-switch run work
+claude-switch run personal
 ```
 
-#### Concurrent sessions with env vars
+#### Shell integration (recommended)
 
-The `env` command prints shell `export` statements that set OAuth environment
-variables (`CLAUDE_CODE_OAUTH_TOKEN`, `CLAUDE_CODE_OAUTH_REFRESH_TOKEN`, etc.)
-and `CLAUDE_CONFIG_DIR`. This lets you run **multiple Claude sessions
-simultaneously**, each using a different profile — no Keychain conflicts.
+Add to `~/.zshrc` or `~/.bashrc`:
 
 ```bash
-# Terminal 1 — work profile
-eval $(claude-switch env work)
-claude
-
-# Terminal 2 — personal profile
-eval $(claude-switch env personal)
-claude
+eval "$(claude-switch init)"
 ```
 
-**Shell aliases** make this even easier:
+Then launch claude with any profile using `-a`:
 
 ```bash
-alias claude-work='eval $(claude-switch env work) && claude'
-alias claude-personal='eval $(claude-switch env personal) && claude'
+claude -a work                # work profile
+claude -a personal            # personal profile in another terminal
+claude -a work -p 'fix bug'  # pass flags through
+claude                        # normal launch (no profile override)
 ```
 
-The `env` command tries to extract tokens automatically from stored credentials.
-If auto-extraction doesn't find tokens (field names vary by Claude Code version),
-set one manually:
+#### Direct launch
+
+Without shell integration, use `run` directly:
 
 ```bash
-# 1. Switch to the account you want to provision
-claude-switch use work
-
-# 2. Generate a long-lived token
-claude setup-token
-
-# 3. Save the token for env usage
-claude-switch token work <paste-token>
-
-# 4. Now env works for this profile
-eval $(claude-switch env work)
+claude-switch run work
+claude-switch run work -- -p 'summarize this repo'
+claude-switch run work -- --dangerously-skip-permissions
 ```
 
-#### Environment variables set by `env`
+#### Classic switch (single-session)
+
+The `use` command swaps the default credentials (Keychain on macOS, credentials
+file on Linux). Only one profile can be active at a time.
+
+```bash
+claude-switch use work      # requires restarting claude
+```
+
+#### Managing profiles
+
+```bash
+claude-switch list            # show all profiles
+claude-switch current         # show the active profile
+claude-switch remove old-acct # delete a profile
+```
+
+#### Manual token provisioning
+
+The `run` and `env` commands try to extract OAuth tokens from stored credentials
+automatically. If auto-extraction doesn't work, set a token manually:
+
+```bash
+claude-switch use work                     # switch to the account
+claude setup-token                         # generate a long-lived token
+claude-switch token work <paste-token>     # save it
+claude-switch run work                     # now it works
+```
+
+#### How it works
+
+The `run` command (and shell integration) launches `claude` with these environment
+variables set on the child process — no eval, no shell pollution:
 
 | Variable | Purpose |
 |---|---|
