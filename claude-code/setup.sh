@@ -35,25 +35,37 @@ printf "  ${GREEN}✓${RESET} Linked to ${BOLD}%s/claude-switch${RESET}\n" "$BIN
 
 # Install shell config
 SHELL_RC="${HOME}/.zshrc"
-ALIAS_MARKER="# claude-code/setup.sh"
+MARKER_START="# claude-code/setup.sh"
+MARKER_END="# claude-code/setup.sh:end"
 
-if grep -qF "$ALIAS_MARKER" "$SHELL_RC" 2>/dev/null; then
-  printf "  ${DIM}Shell config already in %s${RESET}\n" "$SHELL_RC"
-else
-  cat >> "$SHELL_RC" <<'SHELL'
+SHELL_BLOCK="$MARKER_START
+alias cc-work='CLAUDE_CONFIG_DIR=~/.claude-work claude'
+alias cc-personal='CLAUDE_CONFIG_DIR=~/.claude-personal claude'
+alias cc-work-yolo='CLAUDE_CONFIG_DIR=~/.claude-work claude --dangerously-skip-permissions'
+alias cc-personal-yolo='CLAUDE_CONFIG_DIR=~/.claude-personal claude --dangerously-skip-permissions'
+eval \"\$(claude-switch init)\"
+$MARKER_END"
 
-# claude-code/setup.sh
-alias cc="claude --dangerously-skip-permissions"
-alias claude-work='CLAUDE_CONFIG_DIR=~/.claude-work claude'
-alias claude-personal='CLAUDE_CONFIG_DIR=~/.claude-personal claude'
-eval "$(claude-switch init)"
-SHELL
-  printf "  ${GREEN}✓${RESET} Added to %s:\n" "$SHELL_RC"
-  printf "       ${BOLD}cc${RESET}               — claude --dangerously-skip-permissions\n"
-  printf "       ${BOLD}claude-work${RESET}      — claude with work profile\n"
-  printf "       ${BOLD}claude-personal${RESET}  — claude with personal profile\n"
-  printf "       ${BOLD}claude -a <name>${RESET} — claude-switch shell integration\n"
+if grep -qF "$MARKER_START" "$SHELL_RC" 2>/dev/null; then
+  # Remove old block (everything from marker start to marker end, or just the old lines)
+  # Use sed to delete from MARKER_START to MARKER_END (or to next blank line if no end marker)
+  if grep -qF "$MARKER_END" "$SHELL_RC" 2>/dev/null; then
+    sed -i '' "\|$MARKER_START|,\|$MARKER_END|d" "$SHELL_RC"
+  else
+    # Old format: remove marker line and the lines right after it up to blank line
+    sed -i '' "\|$MARKER_START|,/^$/d" "$SHELL_RC"
+  fi
+  printf "  ${DIM}Removed old shell config from %s${RESET}\n" "$SHELL_RC"
 fi
+
+# Append new block
+printf '\n%s\n' "$SHELL_BLOCK" >> "$SHELL_RC"
+printf "  ${GREEN}✓${RESET} Added to %s:\n" "$SHELL_RC"
+printf "       ${BOLD}cc-work${RESET}            — claude with work profile\n"
+printf "       ${BOLD}cc-personal${RESET}        — claude with personal profile\n"
+printf "       ${BOLD}cc-work-yolo${RESET}       — work + skip permissions\n"
+printf "       ${BOLD}cc-personal-yolo${RESET}   — personal + skip permissions\n"
+printf "       ${BOLD}claude -a <name>${RESET}   — claude-switch shell integration\n"
 
 echo ""
 
