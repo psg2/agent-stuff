@@ -67,6 +67,27 @@ printf "       ${BOLD}cc-work-yolo${RESET}       — work + skip permissions\n"
 printf "       ${BOLD}cc-personal-yolo${RESET}   — personal + skip permissions\n"
 printf "       ${BOLD}claude -a <name>${RESET}   — claude-switch shell integration\n"
 
+# Symlink global skills to profile config dirs
+SKILLS_SRC="${HOME}/.claude/skills"
+if [[ -d "$SKILLS_SRC" ]]; then
+  for profile in work personal; do
+    profile_dir="${HOME}/.claude-${profile}"
+    mkdir -p "$profile_dir"
+    if [[ -L "$profile_dir/skills" ]]; then
+      # Already a symlink — update it
+      ln -sf "$SKILLS_SRC" "$profile_dir/skills"
+    elif [[ ! -e "$profile_dir/skills" ]]; then
+      ln -s "$SKILLS_SRC" "$profile_dir/skills"
+    else
+      printf "  ${YELLOW}!${RESET} %s/skills exists and is not a symlink — skipped\n" "$profile_dir"
+      continue
+    fi
+    printf "  ${GREEN}✓${RESET} Linked skills → ${BOLD}~/.claude-%s/skills${RESET}\n" "$profile"
+  done
+else
+  printf "  ${DIM}No global skills found at %s — skipping symlinks${RESET}\n" "$SKILLS_SRC"
+fi
+
 echo ""
 
 # Check PATH
