@@ -68,14 +68,15 @@ printf "       ${BOLD}cc-personal-yolo${RESET}   — personal + skip permissions
 printf "       ${BOLD}claude -a <name>${RESET}   — claude-switch shell integration\n"
 
 # Symlink global skills to profile config dirs
-SKILLS_SRC="${HOME}/.claude/skills"
+SKILLS_SRC="${HOME}/.agents/skills"
 if [[ -d "$SKILLS_SRC" ]]; then
   for profile in work personal; do
     profile_dir="${HOME}/.claude-${profile}"
     mkdir -p "$profile_dir"
     if [[ -L "$profile_dir/skills" ]]; then
-      # Already a symlink — update it
-      ln -sf "$SKILLS_SRC" "$profile_dir/skills"
+      # Already a symlink — remove and recreate
+      rm "$profile_dir/skills"
+      ln -s "$SKILLS_SRC" "$profile_dir/skills"
     elif [[ ! -e "$profile_dir/skills" ]]; then
       ln -s "$SKILLS_SRC" "$profile_dir/skills"
     else
