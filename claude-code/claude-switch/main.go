@@ -238,13 +238,20 @@ func cmdInit() {
 	fmt.Print(`# claude-switch shell integration
 # Add to ~/.zshrc or ~/.bashrc:  eval "$(claude-switch init)"
 claude() {
-  if [[ "$1" == "-a" ]] && [[ -n "$2" ]]; then
-    local _profile="$2"
-    shift 2
-    command claude-switch run "$_profile" -- "$@"
-    return $?
+  local _profile="" _yolo=""
+  local _args=()
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -a) _profile="$2"; shift 2 ;;
+      --yolo) _yolo="--dangerously-skip-permissions"; shift ;;
+      *) _args+=("$1"); shift ;;
+    esac
+  done
+  if [[ -n "$_profile" ]]; then
+    command claude-switch run "$_profile" -- $_yolo "${_args[@]}"
+  else
+    command claude $_yolo "${_args[@]}"
   fi
-  command claude "$@"
 }
 `)
 }
