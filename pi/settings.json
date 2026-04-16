@@ -13,13 +13,5 @@
     "openai-codex:personal/gpt-5.4",
     "openai-codex:work/gpt-5.4"
   ],
-  "packages": [
-    {
-      "source": "git:github.com/tmustier/pi-extensions",
-      "extensions": ["ralph-wiggum/index.ts"],
-      "skills": ["ralph-wiggum/SKILL.md"],
-      "prompts": [],
-      "themes": []
-    }
-  ]
+  "packages": []
 }
