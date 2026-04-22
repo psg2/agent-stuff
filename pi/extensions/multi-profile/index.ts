@@ -5,7 +5,7 @@
  * credentials for different accounts and switch via /model.
  *
  * Supported providers: anthropic, openai, google, xai, groq, openrouter,
- * mistral, and any other provider with built-in streaming support.
+ * mistral, fireworks, and any other provider with built-in streaming support.
  * Anthropic profiles include OAuth support for Claude Pro/Max subscriptions.
  *
  * Usage:
@@ -19,6 +19,7 @@
  *        /login anthropic:work      (OAuth for Anthropic)
  *        /login openai-codex:work   (OAuth for ChatGPT Plus/Pro)
  *        Set OPENAI_WORK_API_KEY    (env var for OpenAI API keys)
+ *        Set FIREWORKS_WORK_API_KEY (env var for Fireworks API keys)
  *   5. Switch via /model — pick from anthropic:work/*, openai-codex:work/*, etc.
  *
  * Profiles are stored in profiles.json next to this file.
@@ -83,6 +84,7 @@ const SUPPORTED_PROVIDERS: Record<string, ProviderInfo> = {
 	openrouter: { api: "openai-completions" as Api, baseUrl: "https://openrouter.ai/api/v1", envKey: "OPENROUTER" },
 	mistral: { api: "openai-completions" as Api, baseUrl: "https://api.mistral.ai/v1", envKey: "MISTRAL" },
 	cerebras: { api: "openai-completions" as Api, baseUrl: "https://api.cerebras.ai/v1", envKey: "CEREBRAS" },
+	fireworks: { api: "anthropic-messages" as Api, baseUrl: "https://api.fireworks.ai/inference", envKey: "FIREWORKS" },
 };
 
 function loadProfiles(): ProfileConfig[] {
@@ -114,6 +116,7 @@ function getProviderModels(provider: string, profileName: string): ProviderModel
 	return builtIn.map((m) => ({
 		id: m.id,
 		name: `${m.name} (${profileName})`,
+		api: m.api,
 		reasoning: m.reasoning,
 		input: m.input,
 		cost: { ...m.cost },

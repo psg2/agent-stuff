@@ -52,6 +52,7 @@ export default function (pi: ExtensionAPI): void {
 	function installFooter(
 		ctx: Parameters<Parameters<ExtensionAPI["on"]>[1]>[1],
 	): void {
+		const sessionCwd = ctx.cwd;
 		ctx.ui.setFooter((tui, theme, footerData) => {
 			const unsub = footerData.onBranchChange(() => tui.requestRender());
 
@@ -60,7 +61,7 @@ export default function (pi: ExtensionAPI): void {
 				invalidate(): void {},
 				render(width: number): string[] {
 					// --- Line 1: CWD + branch (with git status) + session name ---
-					let pwd = process.cwd();
+					let pwd = sessionCwd;
 					const home = process.env.HOME || process.env.USERPROFILE;
 					if (home && pwd.startsWith(home)) pwd = `~${pwd.slice(home.length)}`;
 

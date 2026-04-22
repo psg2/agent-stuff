@@ -18,9 +18,10 @@ export default function (pi: ExtensionAPI) {
 	const activeTools = new Map<string, { name: string; startTime: number }>();
 	let timerInterval: ReturnType<typeof setInterval> | null = null;
 
-	// Override bash tool to enforce default timeout
-	const cwd = process.cwd();
-	const baseBash = createBashTool(cwd);
+	// Override bash tool to enforce default timeout.
+	// Keep the registered tool metadata from a template instance, but execute
+	// against the active session cwd so branch/session switches stay correct.
+	const baseBash = createBashTool(process.cwd());
 
 	pi.registerTool({
 		...baseBash,
@@ -28,7 +29,8 @@ export default function (pi: ExtensionAPI) {
 			if (defaultTimeout > 0 && !params.timeout) {
 				params = { ...params, timeout: defaultTimeout };
 			}
-			return baseBash.execute(toolCallId, params, signal, onUpdate);
+			const currentBash = createBashTool(ctx.cwd);
+			return currentBash.execute(toolCallId, params, signal, onUpdate, ctx);
 		},
 	});
 

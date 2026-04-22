@@ -17,6 +17,7 @@ Each profile registers separate providers (e.g. `anthropic:work`, `openai-codex:
 | openrouter | API key | `OPENROUTER_<PROFILE>_API_KEY` |
 | mistral | API key | `MISTRAL_<PROFILE>_API_KEY` |
 | cerebras | API key | `CEREBRAS_<PROFILE>_API_KEY` |
+| fireworks | API key | `FIREWORKS_<PROFILE>_API_KEY` |
 
 ## Setup
 
@@ -52,13 +53,14 @@ You'll be prompted to select which providers to include (or "All providers"). Th
 
 Select `Anthropic (work)` or `ChatGPT Plus/Pro (work)` from the list.
 
-**API key providers** (OpenAI, Google, xAI, etc.):
+**API key providers** (OpenAI, Google, Fireworks, xAI, etc.):
 
 Set the environment variable with the profile name:
 
 ```bash
 export OPENAI_WORK_API_KEY=sk-...
 export GEMINI_WORK_API_KEY=AI...
+export FIREWORKS_WORK_API_KEY=fw_...
 ```
 
 ### Switch accounts
