@@ -18,6 +18,7 @@ Each profile registers separate providers (e.g. `anthropic:work`, `openai-codex:
 | mistral | API key | `MISTRAL_<PROFILE>_API_KEY` |
 | cerebras | API key | `CEREBRAS_<PROFILE>_API_KEY` |
 | fireworks | API key | `FIREWORKS_<PROFILE>_API_KEY` |
+| together | API key | `TOGETHER_<PROFILE>_API_KEY` |
 
 ## Setup
 

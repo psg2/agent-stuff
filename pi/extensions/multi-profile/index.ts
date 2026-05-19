@@ -25,7 +25,7 @@
  * Profiles are stored in profiles.json next to this file.
  */
 
-import Anthropic from "@anthropic-ai/sdk";
+import { Anthropic } from "@anthropic-ai/sdk";
 import type { ContentBlockParam, MessageCreateParamsStreaming } from "@anthropic-ai/sdk/resources/messages.js";
 import {
 	type Api,
@@ -47,9 +47,9 @@ import {
 	calculateCost,
 	createAssistantMessageEventStream,
 	getModels,
-} from "@mariozechner/pi-ai";
-import { loginOpenAICodex, refreshOpenAICodexToken } from "@mariozechner/pi-ai/oauth";
-import type { ExtensionAPI, ProviderConfig, ProviderModelConfig } from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-ai";
+import { loginOpenAICodex, refreshOpenAICodexToken } from "@earendil-works/pi-ai/oauth";
+import type { ExtensionAPI, ProviderConfig, ProviderModelConfig } from "@earendil-works/pi-coding-agent";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -82,9 +82,10 @@ const SUPPORTED_PROVIDERS: Record<string, ProviderInfo> = {
 	xai: { api: "openai-completions" as Api, baseUrl: "https://api.x.ai/v1", envKey: "XAI" },
 	groq: { api: "openai-completions" as Api, baseUrl: "https://api.groq.com/openai/v1", envKey: "GROQ" },
 	openrouter: { api: "openai-completions" as Api, baseUrl: "https://openrouter.ai/api/v1", envKey: "OPENROUTER" },
-	mistral: { api: "openai-completions" as Api, baseUrl: "https://api.mistral.ai/v1", envKey: "MISTRAL" },
+	mistral: { api: "mistral-conversations" as Api, baseUrl: "https://api.mistral.ai/v1", envKey: "MISTRAL" },
 	cerebras: { api: "openai-completions" as Api, baseUrl: "https://api.cerebras.ai/v1", envKey: "CEREBRAS" },
 	fireworks: { api: "anthropic-messages" as Api, baseUrl: "https://api.fireworks.ai/inference", envKey: "FIREWORKS" },
+	together: { api: "openai-completions" as Api, baseUrl: "https://api.together.xyz/v1", envKey: "TOGETHER" },
 };
 
 function loadProfiles(): ProfileConfig[] {
@@ -351,9 +352,10 @@ function streamAnthropic(model: Model<Api>, context: Context, options?: SimpleSt
 			}
 			if (context.tools) params.tools = convertTools(context.tools, isOAuth);
 			const budgets: Record<string, number> = { minimal: 1024, low: 4096, medium: 10240, high: 20480 };
-			if (options?.reasoning && options.reasoning !== "off" && model.reasoning) {
-				const custom = options.thinkingBudgets?.[options.reasoning as keyof typeof options.thinkingBudgets];
-				const budgetTokens = custom ?? budgets[options.reasoning] ?? 10240;
+			const reasoning = options?.reasoning as string | undefined;
+			if (reasoning && reasoning !== "off" && model.reasoning) {
+				const custom = options.thinkingBudgets?.[reasoning as keyof typeof options.thinkingBudgets];
+				const budgetTokens = custom ?? budgets[reasoning] ?? 10240;
 				// Anthropic requires max_tokens > thinking.budget_tokens
 				if (params.max_tokens > budgetTokens) {
 					params.thinking = { type: "enabled", budget_tokens: budgetTokens };
@@ -606,10 +608,6 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("model_select", async (event, ctx) => {
 		updateProfileIndicator(ctx, event.model.provider);
-	});
-
-	pi.on("session_switch", async (_event, ctx) => {
-		updateProfileIndicator(ctx);
 	});
 
 	pi.registerCommand("profile", {

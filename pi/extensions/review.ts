@@ -10,7 +10,7 @@
  *   /review compare against develop instead of main
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 function buildReviewMessage(extraPrompt: string): string {
 	const sections = [

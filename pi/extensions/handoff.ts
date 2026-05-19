@@ -10,9 +10,9 @@
  *   /handoff check all files that import from the old auth module
  */
 
-import { complete, type Message } from "@mariozechner/pi-ai";
-import type { ExtensionAPI, SessionEntry } from "@mariozechner/pi-coding-agent";
-import { BorderedLoader, convertToLlm, serializeConversation } from "@mariozechner/pi-coding-agent";
+import { complete, type Message } from "@earendil-works/pi-ai";
+import type { ExtensionAPI, SessionEntry } from "@earendil-works/pi-coding-agent";
+import { BorderedLoader, convertToLlm, serializeConversation } from "@earendil-works/pi-coding-agent";
 import { execSync } from "node:child_process";
 
 const SYSTEM_PROMPT = `You are a context transfer assistant. Given a conversation history and the user's goal for a new thread, generate a focused prompt that:
@@ -79,7 +79,7 @@ export default function (pi: ExtensionAPI) {
 
 				const doGenerate = async () => {
 					const auth = await ctx.modelRegistry.getApiKeyAndHeaders(ctx.model!);
-					if (!auth.ok) throw new Error(auth.error);
+					if (!auth.ok) throw new Error((auth as { error: string }).error);
 					const apiKey = auth.apiKey;
 
 					const userMessage: Message = {
@@ -135,7 +135,7 @@ export default function (pi: ExtensionAPI) {
 			// Copy to clipboard
 			try {
 				execSync("pbcopy", { input: editedPrompt, encoding: "utf-8" });
-				ctx.ui.notify("Handoff prompt copied to clipboard! Paste it in a new session.", "success");
+				ctx.ui.notify("Handoff prompt copied to clipboard! Paste it in a new session.", "info");
 			} catch {
 				// Fallback: if pbcopy isn't available, just notify
 				ctx.ui.notify("Handoff prompt ready (clipboard copy failed — use the editor text above).", "warning");

@@ -11,12 +11,20 @@
  * the context handler injects synthetic aborted tool_result messages.
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import type { AgentMessage } from "@mariozechner/pi-ai";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+type RepairMessage = {
+	role: string;
+	content?: unknown;
+	toolCallId?: string;
+	toolName?: string;
+	isError?: boolean;
+	timestamp?: number;
+	[key: string]: unknown;
+};
 
 const ERROR_PATTERN = /`tool_use` ids were found without `tool_result`/;
 
-function hasOrphanedToolCalls(messages: AgentMessage[]): boolean {
+function hasOrphanedToolCalls(messages: RepairMessage[]): boolean {
 	for (let i = 0; i < messages.length; i++) {
 		const msg = messages[i];
 		if (msg.role !== "assistant" || !Array.isArray(msg.content)) continue;
@@ -41,7 +49,7 @@ function hasOrphanedToolCalls(messages: AgentMessage[]): boolean {
 	return false;
 }
 
-function patchOrphanedToolCalls(messages: AgentMessage[]): { messages: AgentMessage[]; patched: boolean } {
+function patchOrphanedToolCalls(messages: RepairMessage[]): { messages: RepairMessage[]; patched: boolean } {
 	let patched = false;
 
 	for (let i = 0; i < messages.length; i++) {
@@ -64,7 +72,7 @@ function patchOrphanedToolCalls(messages: AgentMessage[]): { messages: AgentMess
 		}
 
 		if (toolCallIds.size > 0) {
-			const injected: AgentMessage[] = [];
+			const injected: RepairMessage[] = [];
 			for (const id of toolCallIds) {
 				let toolName = "unknown";
 				for (const block of msg.content) {
@@ -105,9 +113,9 @@ export default function (pi: ExtensionAPI) {
 		}
 
 		const entries = ctx.sessionManager.getBranch();
-		const messages: AgentMessage[] = [];
+		const messages: RepairMessage[] = [];
 		for (const entry of entries) {
-			if (entry.type === "message") messages.push(entry.message);
+			if (entry.type === "message") messages.push(entry.message as RepairMessage);
 		}
 
 		if (hasOrphanedToolCalls(messages)) {
@@ -136,9 +144,9 @@ export default function (pi: ExtensionAPI) {
 	pi.on("context", async (event) => {
 		if (!needsRepair) return;
 
-		const { messages, patched } = patchOrphanedToolCalls(event.messages);
+		const { messages, patched } = patchOrphanedToolCalls(event.messages as RepairMessage[]);
 		if (patched) {
-			return { messages };
+			return { messages: messages as typeof event.messages };
 		}
 
 		// If we thought we needed repair but found nothing, clear the flag

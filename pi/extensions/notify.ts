@@ -10,8 +10,8 @@
  * Based on: https://github.com/mitsuhiko/agent-stuff/blob/main/pi-extensions/notify.ts
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { Markdown, type MarkdownTheme } from "@mariozechner/pi-tui";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Markdown, type MarkdownTheme } from "@earendil-works/pi-tui";
 
 /**
  * Send a desktop notification via OSC 777 escape sequence.

@@ -6,8 +6,8 @@
  * - Configurable via /bash-timeout <seconds> (0 = no default timeout).
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { createBashTool } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { createBashTool } from "@earendil-works/pi-coding-agent";
 
 const DEFAULT_TIMEOUT = 120;
 
@@ -30,7 +30,7 @@ export default function (pi: ExtensionAPI) {
 				params = { ...params, timeout: defaultTimeout };
 			}
 			const currentBash = createBashTool(ctx.cwd);
-			return currentBash.execute(toolCallId, params, signal, onUpdate, ctx);
+			return currentBash.execute(toolCallId, params, signal, onUpdate);
 		},
 	});
 

@@ -56,8 +56,8 @@
  *   3. Run pi (extension auto-discovered from extensions dir)
  */
 
-import type { ExtensionAPI, ToolExecutionEndEvent } from "@mariozechner/pi-coding-agent";
-import { VERSION } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { VERSION } from "@earendil-works/pi-coding-agent";
 import { randomUUID } from "node:crypto";
 import { arch, hostname, platform, release, userInfo } from "node:os";
 
@@ -424,7 +424,7 @@ export default function (pi: ExtensionAPI) {
 		toolArgs.set(event.toolCallId, event.args);
 	});
 
-	pi.on("tool_execution_end", async (event: ToolExecutionEndEvent) => {
+	pi.on("tool_execution_end", async (event) => {
 		const startTime = toolTimings.get(event.toolCallId);
 		const args = toolArgs.get(event.toolCallId);
 		toolTimings.delete(event.toolCallId);
